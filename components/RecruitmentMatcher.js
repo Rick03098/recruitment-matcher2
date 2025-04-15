@@ -4,6 +4,16 @@ export default function RecruitmentMatcher() {
   const [jobDescription, setJobDescription] = useState('');
   const [activeTab, setActiveTab] = useState('upload');
 
+  const testApi = async () => {
+    try {
+      const response = await fetch('/api/hello');
+      const data = await response.json();
+      alert('API响应: ' + data.message);
+    } catch (error) {
+      alert('API调用失败: ' + error.message);
+    }
+  };
+
   return (
     <div className="p-4">
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
@@ -43,8 +53,9 @@ export default function RecruitmentMatcher() {
               <div>
                 <button
                   className="bg-blue-500 text-white font-bold py-2 px-4 rounded"
+                  onClick={testApi}
                 >
-                  开始匹配
+                  测试API
                 </button>
               </div>
             </div>
