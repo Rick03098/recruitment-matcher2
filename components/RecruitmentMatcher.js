@@ -1,39 +1,42 @@
-// pages/api/simpleMatch.js
-export default async function handler(req, res) {
-  console.log('simpleMatch API被调用');
+// 只替换matchResumes函数
+const matchResumes = async () => {
+  if (!jobDescription.trim()) {
+    alert('请先输入职位描述！');
+    return;
+  }
+
+  setIsMatchLoading(true);
   
   try {
-    // 简单响应，不做复杂处理
-    return res.status(200).json({
-      matches: [
-        {
-          id: '1',
-          name: '张三',
-          title: '前端开发工程师',
-          skills: ['JavaScript', 'React'],
-          experience: '3年',
-          education: '本科',
-          matchScore: 85,
-          matchDetails: {
-            skillsScore: 85,
-            experienceScore: 80,
-            educationScore: 90,
-            matchedSkills: ['JavaScript', 'React'],
-            missingSkills: [],
-            analysis: '候选人技能匹配良好',
-            recommendation: '推荐考虑'
-          }
-        }
-      ],
-      jobRequirements: {
-        jobTitle: '前端开发',
-        skills: ['JavaScript', 'React'],
-        experience: '3年以上',
-        education: '本科及以上'
-      }
+    console.log('调用匹配API...');
+    alert('正在调用匹配API'); // 添加一个明显的提示
+    
+    // 调用匹配API
+    const response = await fetch('/api/simpleMatch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jobDescription,
+        resumes: [] // 暂时发送空数组
+      }),
     });
+    
+    console.log('API响应状态:', response.status);
+    
+    const data = await response.json();
+    console.log('匹配结果:', data);
+    
+    setMatches(data.matches || []);
+    setJobRequirements(data.jobRequirements || null);
+    setActiveTab('results'); // 切换到结果页
+    
+    alert('匹配完成'); // 添加完成提示
   } catch (error) {
     console.error('匹配过程出错:', error);
-    return res.status(500).json({ error: error.message });
+    alert('匹配过程出错: ' + error.message);
+  } finally {
+    setIsMatchLoading(false);
   }
-}
+};
