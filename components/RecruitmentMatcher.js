@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function RecruitmentMatcher() {
   const [jobDescription, setJobDescription] = useState('');
   const [activeTab, setActiveTab] = useState('upload');
+  const [resumes, setResumes] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
+  // 测试基本API
   const testApi = async () => {
     try {
       const response = await fetch('/api/hello');
@@ -13,6 +16,26 @@ export default function RecruitmentMatcher() {
       alert('API调用失败: ' + error.message);
     }
   };
+
+  // 获取简历数据
+  useEffect(() => {
+    const fetchResumes = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/fetchResumes');
+        const data = await response.json();
+        setResumes(data.resumes);
+      } catch (error) {
+        console.error('获取简历失败:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (activeTab === 'resumes') {
+      fetchResumes();
+    }
+  }, [activeTab]);
 
   return (
     <div className="p-4">
@@ -50,12 +73,17 @@ export default function RecruitmentMatcher() {
                   onChange={(e) => setJobDescription(e.target.value)}
                 />
               </div>
-              <div>
+              <div className="flex space-x-4">
                 <button
                   className="bg-blue-500 text-white font-bold py-2 px-4 rounded"
                   onClick={testApi}
                 >
                   测试API
+                </button>
+                <button
+                  className="bg-green-500 text-white font-bold py-2 px-4 rounded"
+                >
+                  开始匹配
                 </button>
               </div>
             </div>
@@ -65,7 +93,45 @@ export default function RecruitmentMatcher() {
           {activeTab === 'resumes' && (
             <div>
               <h2 className="text-xl font-semibold mb-4">简历库</h2>
-              <p>这里将显示您的简历库</p>
+              
+              {isLoading ? (
+                <p>加载中...</p>
+              ) : resumes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="px-4 py-2 text-left">姓名</th>
+                        <th className="px-4 py-2 text-left">职位</th>
+                        <th className="px-4 py-2 text-left">技能</th>
+                        <th className="px-4 py-2 text-left">经验</th>
+                        <th className="px-4 py-2 text-left">学历</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resumes.map((resume) => (
+                        <tr key={resume.id} className="border-t">
+                          <td className="px-4 py-2">{resume.name}</td>
+                          <td className="px-4 py-2">{resume.title}</td>
+                          <td className="px-4 py-2">
+                            <div className="flex flex-wrap gap-1">
+                              {resume.skills.map((skill, index) => (
+                                <span key={index} className="bg-gray-100 px-2 py-1 rounded text-xs">
+                                  {skill}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2">{resume.experience}</td>
+                          <td className="px-4 py-2">{resume.education}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p>暂无简历数据</p>
+              )}
             </div>
           )}
         </div>
