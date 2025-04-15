@@ -1,308 +1,154 @@
-import { useState, useEffect } from 'react';
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: '只支持POST请求' });
+  }
 
-export default function RecruitmentMatcher() {
-  const [jobDescription, setJobDescription] = useState('');
-  const [activeTab, setActiveTab] = useState('upload');
-  const [resumes, setResumes] = useState([]);
-  const [matches, setMatches] = useState([]);
-  const [jobRequirements, setJobRequirements] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isMatchLoading, setIsMatchLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [dataSource, setDataSource] = useState('');
+  const { jobDescription, resumes = [] } = req.body;
 
-  // 获取简历数据
-  useEffect(() => {
-    const fetchResumes = async () => {
-      if (activeTab !== 'resumes') return;
-      
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        const response = await fetch('/api/fetchResumes');
-        const data = await response.json();
-        
-        if (data.resumes) {
-          setResumes(data.resumes);
-          setDataSource(data.source || '未知');
-        }
-        
-        if (data.error) {
-          setError(`错误: ${data.error}`);
-        }
-      } catch (err) {
-        console.error('获取简历失败:', err);
-        setError('无法加载简历库，请稍后再试');
-        setDataSource('错误');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  if (!jobDescription) {
+    return res.status(400).json({ message: '职位描述不能为空' });
+  }
 
-    fetchResumes();
-  }, [activeTab]);
-
-  // 匹配简历
-  const matchResumes = async () => {
-    if (!jobDescription.trim()) {
-      setError('请先输入职位描述！');
-      return;
-    }
-
-    setIsMatchLoading(true);
-    setError(null);
+  try {
+    console.log("处理匹配请求，职位描述长度:", jobDescription.length);
+    console.log("候选人数量:", resumes.length);
     
-    try {
-      // 确保我们有简历数据
-      let resumesToMatch = resumes;
-      if (resumesToMatch.length === 0) {
-        const response = await fetch('/api/fetchResumes');
-        const data = await response.json();
-        resumesToMatch = data.resumes || [];
-        setResumes(resumesToMatch);
-      }
-      
-      // 调用匹配API
-      const response = await fetch('/api/match', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          jobDescription,
-          resumes: resumesToMatch
-        }),
+    // 测试第一个简历的数据结构
+    if (resumes.length > 0) {
+      console.log("第一份简历数据样例:", {
+        name: resumes[0].name,
+        skillsType: typeof resumes[0].skills,
+        isArray: Array.isArray(resumes[0].skills),
+        skills: resumes[0].skills
       });
-      
-      if (!response.ok) {
-        throw new Error('匹配请求失败');
+    }
+    
+    // 从JD中提取关键词
+    const keywords = extractKeywords(jobDescription);
+    console.log("提取的关键词:", keywords);
+    
+    // 计算匹配度
+    const matches = resumes.map(resume => {
+      // 确保技能是数组
+      let skills = resume.skills || [];
+      if (!Array.isArray(skills)) {
+        if (typeof skills === 'string') {
+          skills = skills.split(',').map(s => s.trim());
+        } else {
+          skills = [];
+        }
       }
       
-      const data = await response.json();
-      setMatches(data.matches || []);
-      setJobRequirements(data.jobRequirements || null);
-      setActiveTab('results'); // 切换到结果页
-    } catch (error) {
-      console.error('匹配过程出错:', error);
-      setError('匹配过程出错: ' + error.message);
-    } finally {
-      setIsMatchLoading(false);
-    }
-  };
+      console.log(`候选人 ${resume.name} 的技能:`, skills);
+      
+      // 技能匹配
+      const matchedSkills = skills.filter(skill => 
+        keywords.some(keyword => {
+          const skillLower = skill.toLowerCase();
+          const keywordLower = keyword.toLowerCase();
+          return skillLower.includes(keywordLower) || keywordLower.includes(skillLower);
+        })
+      );
+      
+      console.log(`候选人 ${resume.name} 的匹配技能:`, matchedSkills);
+      
+      // 计算匹配度 (如果没有关键词，默认至少给10%)
+      const skillScore = keywords.length > 0 
+        ? (matchedSkills.length / keywords.length) * 100 
+        : 10;
+      
+      // 整体匹配分数
+      const matchScore = Math.max(Math.round(skillScore), 10); // 至少给10%的匹配度
+      
+      return {
+        ...resume,
+        matchScore,
+        matchDetails: {
+          matchedSkills,
+          missingSkills: skills.filter(skill => !matchedSkills.includes(skill)),
+          analysis: generateAnalysis(resume.name, matchScore, matchedSkills)
+        }
+      };
+    });
+    
+    // 按匹配度排序
+    const sortedMatches = matches.sort((a, b) => b.matchScore - a.matchScore);
+    
+    // 职位要求
+    const jobRequirements = {
+      jobTitle: extractJobTitle(jobDescription),
+      skills: keywords
+    };
+    
+    return res.status(200).json({
+      matches: sortedMatches,
+      jobRequirements
+    });
+  } catch (error) {
+    console.error('匹配过程出错:', error);
+    return res.status(500).json({ error: '匹配过程出错: ' + error.message });
+  }
+}
 
-  // 获取匹配度等级
-  const getMatchLevel = (score) => {
-    if (score >= 80) return { text: '极高', color: 'text-green-600' };
-    if (score >= 60) return { text: '良好', color: 'text-blue-600' };
-    if (score >= 40) return { text: '一般', color: 'text-yellow-600' };
-    return { text: '较低', color: 'text-red-600' };
-  };
-
-  return (
-    <div className="p-4">
-      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-6">
-          <h1 className="text-2xl font-bold mb-6">智能招聘匹配系统</h1>
-          
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-          
-          {/* 标签导航 */}
-          <div className="flex border-b mb-6">
-            <button 
-              className={`py-2 px-4 ${activeTab === 'upload' ? 'font-bold text-blue-500' : 'text-gray-500'}`}
-              onClick={() => setActiveTab('upload')}
-            >
-              上传职位描述
-            </button>
-            <button 
-              className={`py-2 px-4 ${activeTab === 'resumes' ? 'font-bold text-blue-500' : 'text-gray-500'}`}
-              onClick={() => setActiveTab('resumes')}
-            >
-              简历库
-            </button>
-            {matches.length > 0 && (
-              <button 
-                className={`py-2 px-4 ${activeTab === 'results' ? 'font-bold text-blue-500' : 'text-gray-500'}`}
-                onClick={() => setActiveTab('results')}
-              >
-                匹配结果
-              </button>
-            )}
-          </div>
-          
-          {/* 上传职位描述界面 */}
-          {activeTab === 'upload' && (
-            <div>
-              <div className="mb-4">
-                <label className="block text-sm font-bold mb-2">
-                  职位描述
-                </label>
-                <textarea
-                  className="w-full p-2 border rounded h-40"
-                  placeholder="请粘贴职位描述，例如：寻找有经验的前端开发工程师，熟悉JavaScript、React等技术..."
-                  value={jobDescription}
-                  onChange={(e) => setJobDescription(e.target.value)}
-                />
-              </div>
-              <div>
-                <button
-                  className="bg-blue-500 text-white font-bold py-2 px-4 rounded hover:bg-blue-600"
-                  onClick={matchResumes}
-                  disabled={isMatchLoading}
-                >
-                  {isMatchLoading ? '匹配中...' : '开始匹配'}
-                </button>
-              </div>
-            </div>
-          )}
-          
-          {/* 简历库界面 */}
-          {activeTab === 'resumes' && (
-            <div>
-              <h2 className="text-xl font-semibold mb-4">
-                简历库
-                {dataSource && (
-                  <span className="text-sm text-gray-500 ml-2">
-                    (数据源: {dataSource})
-                  </span>
-                )}
-              </h2>
-              
-              {isLoading ? (
-                <p className="text-center py-4">加载中...</p>
-              ) : resumes.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        <th className="px-4 py-2 text-left">姓名</th>
-                        <th className="px-4 py-2 text-left">技能</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resumes.map((resume, index) => (
-                        <tr key={resume.id || index} className="border-t">
-                          <td className="px-4 py-2">{resume.name || '未知'}</td>
-                          <td className="px-4 py-2">
-                            {resume.skills && Array.isArray(resume.skills) ? 
-                              resume.skills.join(', ') : 
-                              '无技能信息'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-center py-4">暂无简历数据</p>
-              )}
-            </div>
-          )}
-          
-          {/* 匹配结果界面 */}
-          {activeTab === 'results' && (
-            <div>
-              <h2 className="text-xl font-semibold mb-4">匹配结果</h2>
-              
-              {jobRequirements && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <h3 className="font-medium text-lg mb-2">职位要求分析</h3>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <h4 className="font-medium text-sm mb-1">职位</h4>
-                      <p>{jobRequirements.jobTitle || '未指定'}</p>
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-sm mb-1">所需技能</h4>
-                      <div className="flex flex-wrap gap-1">
-                        {jobRequirements.skills && jobRequirements.skills.map((skill, idx) => (
-                          <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                            {skill}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {matches.length > 0 ? (
-                <div className="space-y-6">
-                  {matches.map((match, index) => {
-                    const matchLevel = getMatchLevel(match.matchScore);
-                    
-                    return (
-                      <div key={match.id || index} className="border rounded-lg overflow-hidden">
-                        <div className="flex items-center justify-between bg-gray-50 p-4">
-                          <div className="flex items-center">
-                            <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-3">
-                              {index + 1}
-                            </div>
-                            <div>
-                              <h3 className="font-medium">{match.name}</h3>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-lg font-bold">{match.matchScore}%</div>
-                            <div className={`text-sm ${matchLevel.color}`}>匹配度{matchLevel.text}</div>
-                          </div>
-                        </div>
-                        
-                        <div className="p-4">
-                          <div className="mb-4">
-                            <h4 className="font-medium text-sm mb-2">匹配分析</h4>
-                            <p className="text-sm text-gray-700">{match.matchDetails?.analysis || '无匹配分析'}</p>
-                          </div>
-                          
-                          <div className="grid md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <h4 className="font-medium text-sm mb-1">匹配技能</h4>
-                              <div className="flex flex-wrap gap-1">
-                                {match.matchDetails?.matchedSkills && match.matchDetails.matchedSkills.length > 0 ? (
-                                  match.matchDetails.matchedSkills.map((skill, idx) => (
-                                    <span key={idx} className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">
-                                      {skill}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-sm text-gray-500">无匹配技能</span>
-                                )}
-                              </div>
-                            </div>
-                            <div>
-                              <h4 className="font-medium text-sm mb-1">缺失技能</h4>
-                              <div className="flex flex-wrap gap-1">
-                                {match.matchDetails?.missingSkills && match.matchDetails.missingSkills.length > 0 ? (
-                                  match.matchDetails.missingSkills.map((skill, idx) => (
-                                    <span key={idx} className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs">
-                                      {skill}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-sm text-gray-500">无缺失技能</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-10">
-                  <p className="text-gray-500">暂无匹配结果，请先上传职位描述并开始匹配</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+// 提取关键词 - 改进版
+function extractKeywords(text) {
+  if (!text || typeof text !== 'string') {
+    console.log("无效的文本输入");
+    return ["技能"];
+  }
+  
+  const commonTechKeywords = [
+    'JavaScript', 'React', 'Vue', 'Angular', 'Node.js', 'TypeScript',
+    'Python', 'Java', 'C++', 'C#', 'PHP', 'Ruby', 'Go', 'Swift',
+    'HTML', 'CSS', 'SASS', 'Bootstrap', 'Tailwind',
+    'MongoDB', 'MySQL', 'PostgreSQL', 'SQL', 'NoSQL', 'Redis',
+    'AWS', 'Azure', 'Docker', 'Kubernetes', 'Git',
+    'Linux', 'Windows', 'MacOS', 'Android', 'iOS',
+    '前端', '后端', '全栈', '开发', '测试', 'UI', 'UX',
+    '数据分析', '机器学习', '人工智能', 'AI', '算法', '数据结构',
+    '市场营销', '用户增长', '内容运营', '社交媒体',
+    '金融建模', '投资分析', 'Excel', 'PPT', 'Wind',
+    'Figma', '产品原型', '信息架构', 'LeetCode', 'Tableau', 'R', '用户研究'
+  ];
+  
+  // 提取常见技术关键词
+  const extractedKeywords = commonTechKeywords.filter(keyword => 
+    text.toLowerCase().includes(keyword.toLowerCase())
   );
+  
+  return extractedKeywords.length > 0 ? extractedKeywords : ["通用技能"];
+}
+
+// 提取职位名称
+function extractJobTitle(text) {
+  const commonTitles = [
+    '前端开发工程师', '后端开发工程师', '全栈开发工程师',
+    '软件工程师', '产品经理', 'UI设计师', 'UX设计师',
+    '数据分析师', '人工智能工程师', '机器学习工程师',
+    '测试工程师', '运维工程师', '项目经理',
+    '内容运营', '市场营销', '用户研究', '产品设计'
+  ];
+  
+  for (const title of commonTitles) {
+    if (text.toLowerCase().includes(title.toLowerCase())) {
+      return title;
+    }
+  }
+  
+  return '未指定职位';
+}
+
+// 生成分析
+function generateAnalysis(name, score, matchedSkills) {
+  const skillsText = matchedSkills.length > 0 
+    ? `掌握了${matchedSkills.join('、')}等技能` 
+    : '没有直接匹配的关键技能';
+  
+  if (score >= 80) {
+    return `${name}的技能非常匹配，${skillsText}。`;
+  } else if (score >= 50) {
+    return `${name}的技能部分匹配，${skillsText}，但可能缺少一些关键技能。`;
+  } else {
+    return `${name}的技术栈与职位要求匹配度较低，${skillsText}，可能需要额外培训。`;
+  }
 }
