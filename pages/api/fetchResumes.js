@@ -4,20 +4,28 @@ export default async function handler(req, res) {
   console.log("正在尝试连接Airtable...");
   
   try {
+    // 打印环境变量(不包含API密钥)
+    console.log("Airtable配置:", {
+      baseId: process.env.AIRTABLE_BASE_ID ? "已设置" : "未设置",
+      tableName: process.env.AIRTABLE_TABLE_NAME
+    });
+    
+    if (!process.env.AIRTABLE_API_KEY || !process.env.AIRTABLE_BASE_ID || !process.env.AIRTABLE_TABLE_NAME) {
+      throw new Error("Airtable环境变量未正确设置");
+    }
+    
     // 配置Airtable
-    const apiKey = process.env.AIRTABLE_API_KEY || 'patCOFt5DYSAv73VI.a27ea50b39361b388fe941cd6b562518a08f7943631c2deddd479a8bb1ba6d38';
-    const baseId = process.env.AIRTABLE_BASE_ID || 'appYPoERDFlNulJgi';
-    const tableName = process.env.AIRTABLE_TABLE_NAME || 'tblQbhrbMuzqpXfZP'; // 使用表ID而不是表名
-    
-    console.log("Airtable配置:", { baseId, tableName });
-    
-    const base = new Airtable({ apiKey }).base(baseId);
+    const base = new Airtable({
+      apiKey: process.env.AIRTABLE_API_KEY,
+    }).base(process.env.AIRTABLE_BASE_ID);
+
+    console.log("已创建Airtable连接，尝试获取记录...");
 
     // 从Airtable获取记录
     const records = await new Promise((resolve, reject) => {
       const allRecords = [];
       
-      base(tableName)
+      base(process.env.AIRTABLE_TABLE_NAME)
         .select({
           maxRecords: 100,
           view: "Grid view"
@@ -26,14 +34,11 @@ export default async function handler(req, res) {
           function page(records, fetchNextPage) {
             console.log(`获取到${records.length}条记录`);
             records.forEach(record => {
-              // 直接打印整个记录以查看所有可用字段
-              console.log("记录字段:", Object.keys(record.fields));
-              
               allRecords.push({
                 id: record.id,
                 name: record.get('Name') || '',
                 title: record.get('Title') || '',
-                skills: record.get('Skills') || [],  // 假设Skills是文本字段
+                skills: record.get('Skills') ? record.get('Skills').split(',').map(skill => skill.trim()) : [],
                 experience: record.get('Experience') || '',
                 education: record.get('Education') || '',
                 email: record.get('Email') || '',
@@ -54,26 +59,28 @@ export default async function handler(req, res) {
         );
     });
 
-    // 添加一些处理，确保skills是数组
-    const processedRecords = records.map(record => {
-      // 确保skills是数组
-      let skills = record.skills;
-      if (typeof skills === 'string') {
-        skills = skills.split(',').map(s => s.trim());
-      } else if (!Array.isArray(skills)) {
-        skills = [];
-      }
-      
-      return {
-        ...record,
-        skills
-      };
-    });
+    // 如果没有记录，提供一些默认数据
+    if (records.length === 0) {
+      console.log("未获取到任何记录，返回默认数据");
+      return res.status(200).json({
+        resumes: [
+          {
+            id: 'default1',
+            name: '张三(默认数据)',
+            title: '前端开发工程师',
+            skills: ['JavaScript', 'React', 'HTML', 'CSS'],
+            experience: '3年',
+            education: '本科'
+          }
+        ],
+        message: '从Airtable获取数据为空，显示默认数据'
+      });
+    }
 
+    console.log("成功获取Airtable数据");
     return res.status(200).json({ 
-      resumes: processedRecords,
-      message: '成功从Airtable获取数据',
-      count: processedRecords.length
+      resumes: records,
+      message: '成功从Airtable获取数据' 
     });
   } catch (error) {
     console.error('Error fetching resumes from Airtable:', error);
