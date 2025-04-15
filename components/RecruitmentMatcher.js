@@ -15,7 +15,6 @@ export default function RecruitmentMatcher() {
       try {
         setIsLoadingResumes(true);
         const response = await fetch('/api/fetchResumes');
-
         if (!response.ok) throw new Error('简历获取失败');
         const data = await response.json();
         setResumes(data.resumes || []);
@@ -25,7 +24,6 @@ export default function RecruitmentMatcher() {
         setIsLoadingResumes(false);
       }
     };
-
     fetchResumes();
   }, []);
 
@@ -39,10 +37,18 @@ export default function RecruitmentMatcher() {
     setError(null);
 
     try {
+      const resumeResponse = await fetch('/api/fetchResumes');
+      if (!resumeResponse.ok) throw new Error('获取简历数据失败');
+      const resumeData = await resumeResponse.json();
+      const resumesToMatch = resumeData.resumes || [];
+      setResumes(resumesToMatch);
+
+      if (resumesToMatch.length === 0) throw new Error('没有简历数据可供匹配');
+
       const response = await fetch('/api/aiMatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobDescription, resumes }),
+        body: JSON.stringify({ jobDescription, resumes: resumesToMatch }),
       });
 
       if (!response.ok) throw new Error('AI 匹配失败');
