@@ -6,6 +6,7 @@ export default function RecruitmentMatcher() {
   const [resumes, setResumes] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [dataSource, setDataSource] = useState('');
 
   // 获取简历数据
   useEffect(() => {
@@ -16,15 +17,21 @@ export default function RecruitmentMatcher() {
         setIsLoading(true);
         setError(null);
         
-        const response = await fetch('/api/mockResumes'); // 先使用模拟数据
+        const response = await fetch('/api/fetchResumes');
         const data = await response.json();
         
         if (data.resumes) {
           setResumes(data.resumes);
+          setDataSource(data.source || '未知');
+        }
+        
+        if (data.error) {
+          setError(`错误: ${data.error}`);
         }
       } catch (err) {
         console.error('获取简历失败:', err);
         setError('无法加载简历库，请稍后再试');
+        setDataSource('错误');
       } finally {
         setIsLoading(false);
       }
@@ -76,8 +83,8 @@ export default function RecruitmentMatcher() {
                 />
               </div>
               <div>
-                <button className="bg-blue-500 text-white font-bold py-2 px-4 rounded">
-                  测试版本
+                <button className="bg-blue-500 text-white font-bold py-2 px-4 rounded hover:bg-blue-600">
+                  开始匹配
                 </button>
               </div>
             </div>
@@ -86,10 +93,17 @@ export default function RecruitmentMatcher() {
           {/* 简历库界面 */}
           {activeTab === 'resumes' && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">简历库</h2>
+              <h2 className="text-xl font-semibold mb-4">
+                简历库
+                {dataSource && (
+                  <span className="text-sm text-gray-500 ml-2">
+                    (数据源: {dataSource})
+                  </span>
+                )}
+              </h2>
               
               {isLoading ? (
-                <p className="text-center">加载中...</p>
+                <p className="text-center py-4">加载中...</p>
               ) : resumes.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full">
@@ -100,7 +114,7 @@ export default function RecruitmentMatcher() {
                       </tr>
                     </thead>
                     <tbody>
-                      {resumes.map((resume) => (
+                      {resumes.map((resume, index) => (
                         <tr key={resume.id || index} className="border-t">
                           <td className="px-4 py-2">{resume.name || '未知'}</td>
                           <td className="px-4 py-2">
@@ -114,7 +128,7 @@ export default function RecruitmentMatcher() {
                   </table>
                 </div>
               ) : (
-                <p className="text-center">暂无简历数据</p>
+                <p className="text-center py-4">暂无简历数据</p>
               )}
             </div>
           )}
