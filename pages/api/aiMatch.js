@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     
     // 提取职位要求
     const jobRequirementsResponse = await openai.chat.completions.create({
-      model: "gpt-4-turbo",
+      model: "gpt-4o",
       messages: [
         {
           role: "system", 
