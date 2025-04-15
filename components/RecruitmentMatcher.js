@@ -1,41 +1,51 @@
-// 只替换matchResumes函数
+// 替换matchResumes函数
 const matchResumes = async () => {
   if (!jobDescription.trim()) {
-    alert('请先输入职位描述！');
+    setApiStatus('请先输入职位描述！');
     return;
   }
 
   setIsMatchLoading(true);
+  setApiStatus('匹配中...');
   
   try {
-    console.log('调用匹配API...');
-    alert('正在调用匹配API'); // 添加一个明显的提示
+    // 确保我们有简历数据
+    let resumesToMatch = resumes;
+    if (resumesToMatch.length === 0) {
+      const response = await fetch('/api/fetchResumes');
+      if (!response.ok) throw new Error('获取简历失败');
+      
+      const data = await response.json();
+      resumesToMatch = data.resumes || [];
+      setResumes(resumesToMatch);
+      setApiStatus(data.message || '已获取简历数据');
+    }
     
     // 调用匹配API
-    const response = await fetch('/api/simpleMatch', {
+    const response = await fetch('/api/match', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         jobDescription,
-        resumes: [] // 暂时发送空数组
+        resumes: resumesToMatch
       }),
     });
     
-    console.log('API响应状态:', response.status);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || '匹配请求失败');
+    }
     
     const data = await response.json();
-    console.log('匹配结果:', data);
-    
     setMatches(data.matches || []);
     setJobRequirements(data.jobRequirements || null);
     setActiveTab('results'); // 切换到结果页
-    
-    alert('匹配完成'); // 添加完成提示
+    setApiStatus('匹配成功');
   } catch (error) {
     console.error('匹配过程出错:', error);
-    alert('匹配过程出错: ' + error.message);
+    setApiStatus(`匹配过程出错: ${error.message}`);
   } finally {
     setIsMatchLoading(false);
   }
