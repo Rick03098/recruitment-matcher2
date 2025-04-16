@@ -54,13 +54,21 @@ export default function RecruitmentMatcher() {
     setError(null);
     
     try {
-      // 确保我们有简历数据
-      let resumesToMatch = resumes;
+      // 总是从Airtable获取最新数据
+      const resumeResponse = await fetch('/api/fetchResumes');
+      if (!resumeResponse.ok) {
+        throw new Error('获取简历数据失败');
+      }
+      
+      const resumeData = await resumeResponse.json();
+      const resumesToMatch = resumeData.resumes || [];
+      
+      // 更新简历库
+      setResumes(resumesToMatch);
+      setDataSource(resumeData.source || '未知');
+      
       if (resumesToMatch.length === 0) {
-        const response = await fetch('/api/fetchResumes');
-        const data = await response.json();
-        resumesToMatch = data.resumes || [];
-        setResumes(resumesToMatch);
+        throw new Error('没有简历数据可供匹配');
       }
       
       // 调用匹配API
