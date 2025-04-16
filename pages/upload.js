@@ -27,7 +27,8 @@ export default function UploadResume() {
     setSuccess(null);
 
    try {
-  const response = await fetch('/api/parseResumeSimple', {
+  // 使用新的API端点
+  const response = await fetch('/api/addResume', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -38,6 +39,32 @@ export default function UploadResume() {
     }),
   });
 
+  // 简单处理响应
+  if (!response.ok) {
+    throw new Error('服务器响应错误: ' + response.status);
+  }
+
+  try {
+    const result = await response.json();
+    if (result.success) {
+      setSuccess(result.message || '简历添加成功！');
+      
+      // 3秒后重定向到首页
+      setTimeout(() => {
+        router.push('/');
+      }, 3000);
+    } else {
+      throw new Error(result.message || '未知错误');
+    }
+  } catch (parseError) {
+    throw new Error('无法解析服务器响应');
+  }
+} catch (err) {
+  console.error('简历处理失败:', err);
+  setError(`简历处理失败: ${err.message}`);
+} finally {
+  setIsLoading(false);
+}
   let data;
   const text = await response.text(); // 先获取文本
   
