@@ -37,7 +37,7 @@ export default function UploadResume() {
     formData.append('name', name);
 
     try {
-      const response = await fetch('/api/parseResume', {
+      const response = await fetch('/api/parseResumeWithAI', {
         method: 'POST',
         body: formData,
       });
@@ -48,9 +48,9 @@ export default function UploadResume() {
       }
 
       const data = await response.json();
-      setSuccess(`简历上传成功！已提取 ${Object.keys(data.skills || {}).length} 项技能。`);
+      setSuccess(`简历上传成功！AI已提取关键信息并保存到简历库。`);
       
-      // 3秒后重定向到简历库页面
+      // 3秒后重定向到首页
       setTimeout(() => {
         router.push('/');
       }, 3000);
@@ -118,7 +118,7 @@ export default function UploadResume() {
                 className="bg-blue-500 text-white font-bold py-2 px-4 rounded hover:bg-blue-600 disabled:bg-blue-300"
                 disabled={isLoading}
               >
-                {isLoading ? '处理中...' : '上传并解析'}
+                {isLoading ? 'AI分析中...' : '上传并分析'}
               </button>
               
               <button
