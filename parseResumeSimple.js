@@ -16,30 +16,27 @@ export default async function handler(req, res) {
     const experience = extractExperience(resumeText);
     const education = extractEducation(resumeText);
 
-    // 提取的简历数据
-    const resumeData = {
-      name,
-      title: title || '未指定',
-      skills: extractedSkills.join(', '),
-      experience: experience || '未指定',
-      education: education || '未指定',
-      resumeText: resumeText.substring(0, 500) // 保存部分简历文本
-    };
-
-    // 模拟保存到Airtable的结果
-    const result = {
-      id: 'mock-id-' + Date.now(),
-      fields: resumeData
-    };
-
-    return res.status(200).json({
+    // 创建响应数据
+    const responseData = {
       message: '简历处理成功',
-      resumeData,
-      airtableId: result.id
-    });
+      resumeData: {
+        name,
+        title: title || '未指定',
+        skills: extractedSkills.join(', '),
+        experience: experience || '未指定',
+        education: education || '未指定'
+      }
+    };
+
+    // 确保返回有效的JSON
+    return res.status(200).json(responseData);
   } catch (error) {
     console.error('简历处理失败:', error);
-    return res.status(500).json({ message: '简历处理失败: ' + error.message });
+    // 确保错误响应也是有效的JSON
+    return res.status(500).json({ 
+      message: '简历处理失败', 
+      error: error.message 
+    });
   }
 }
 
