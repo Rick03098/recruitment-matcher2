@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
+
 
 export default function RecruitmentMatcher() {
   const [jobDescription, setJobDescription] = useState('');
@@ -111,7 +113,14 @@ export default function RecruitmentMatcher() {
     <div className="p-4">
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-6">
-          <h1 className="text-2xl font-bold mb-6">智能招聘匹配系统</h1>
+          <div className="flex justify-between items-center mb-6">
+  <h1 className="text-2xl font-bold">智能招聘匹配系统</h1>
+  <Link href="/upload">
+    <a className="bg-green-500 text-white font-bold py-2 px-4 rounded hover:bg-green-600">
+      上传简历
+    </a>
+  </Link>
+</div>
           
           {error && (
             <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
