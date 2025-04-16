@@ -21,6 +21,7 @@ export default async function handler(req, res) {
       keepExtensions: true,
       maxFileSize: 10 * 1024 * 1024, // 限制文件大小为10MB
     });
+    
 
     // 解析表单
     const [fields, files] = await new Promise((resolve, reject) => {
