@@ -1,4 +1,3 @@
-// pages/api/parseResumeSimple.js
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: '只支持POST请求' });
@@ -17,18 +16,26 @@ export default async function handler(req, res) {
     const experience = extractExperience(resumeText);
     const education = extractEducation(resumeText);
 
-    // 模拟返回结果
+    // 提取的简历数据
     const resumeData = {
       name,
       title: title || '未指定',
       skills: extractedSkills.join(', '),
       experience: experience || '未指定',
-      education: education || '未指定'
+      education: education || '未指定',
+      resumeText: resumeText.substring(0, 500) // 保存部分简历文本
+    };
+
+    // 模拟保存到Airtable的结果
+    const result = {
+      id: 'mock-id-' + Date.now(),
+      fields: resumeData
     };
 
     return res.status(200).json({
       message: '简历处理成功',
-      resumeData
+      resumeData,
+      airtableId: result.id
     });
   } catch (error) {
     console.error('简历处理失败:', error);
