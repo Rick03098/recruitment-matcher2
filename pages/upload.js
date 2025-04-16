@@ -26,36 +26,44 @@ export default function UploadResume() {
     setError(null);
     setSuccess(null);
 
-    try {
-      const response = await fetch('/api/parseResumeSimple', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name,
-          resumeText
-        }),
-      });
+   try {
+  const response = await fetch('/api/parseResumeSimple', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      resumeText
+    }),
+  });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || '处理简历失败');
-      }
+  let data;
+  const text = await response.text(); // 先获取文本
+  
+  try {
+    data = JSON.parse(text); // 尝试解析为JSON
+  } catch (jsonError) {
+    console.error('JSON解析失败:', text);
+    throw new Error('服务器返回了无效的JSON: ' + text.substring(0, 100));
+  }
 
-      const data = await response.json();
-      setSuccess(`简历处理成功！已提取关键信息。`);
-      
-      // 3秒后重定向到首页
-      setTimeout(() => {
-        router.push('/');
-      }, 3000);
-    } catch (err) {
-      console.error('简历处理失败:', err);
-      setError(`简历处理失败: ${err.message}`);
-    } finally {
-      setIsLoading(false);
-    }
+  if (!response.ok) {
+    throw new Error(data.message || '处理简历失败');
+  }
+
+  setSuccess(`简历处理成功！${data.message || ''}`);
+  
+  // 3秒后重定向到首页
+  setTimeout(() => {
+    router.push('/');
+  }, 3000);
+} catch (err) {
+  console.error('简历处理失败:', err);
+  setError(`简历处理失败: ${err.message}`);
+} finally {
+  setIsLoading(false);
+}
   };
 
   return (
