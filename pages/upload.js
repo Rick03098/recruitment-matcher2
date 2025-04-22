@@ -1,7 +1,7 @@
 import formidable from 'formidable';
 import fs from 'fs';
 import os from 'os';
-import { parseResumeContent, extractTextFromPdf } from '../../utils/resumeParser';
+import { parseResumeContent, extractTextFromPdf } from '../utils/resumeParser';
 
 // 禁用默认的bodyParser，以便我们可以使用formidable解析form数据
 export const config = {
