@@ -1,7 +1,7 @@
 import formidable from 'formidable';
-import fs from 'fs';
-import os from 'os';
-import { parseResumeContent, extractTextFromPdf, extractNameFromFilename } from '../../utils/resumeParser';
+import { Writable } from 'stream';
+import pdfParse from 'pdf-parse';
+import { parseResumeContent, extractNameFromFilename } from '../../utils/resumeParser';
 import { saveToAirtable } from '../../utils/airtableService';
 
 // 禁用默认的bodyParser，以便使用formidable解析form数据
@@ -17,16 +17,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 使用系统临时目录
-    const tempDir = os.tmpdir();
-    console.log('使用的临时目录:', tempDir);
-    
-    // 配置formidable解析上传文件
+    // 配置formidable使用内存存储
     const form = new formidable.IncomingForm({
-      uploadDir: tempDir,
       keepExtensions: true,
       maxFileSize: 20 * 1024 * 1024, // 20MB
       multiples: true, // 允许多文件上传
+      // 关键部分：使用内存存储而不是文件系统
+      fileWriteStreamHandler: () => {
+        const chunks = [];
+        const writable = new Writable({
+          write(chunk, encoding, callback) {
+            chunks.push(chunk);
+            callback();
+          }
+        });
+        writable.chunks = chunks;
+        return writable;
+      }
     });
     
     // 解析表单
@@ -56,20 +63,21 @@ export default async function handler(req, res) {
     
     for (const uploadedFile of filesArray) {
       try {
-        const filePath = uploadedFile.filepath;
         const fileType = uploadedFile.mimetype;
         const fileName = uploadedFile.originalFilename;
         
         // 只处理PDF文件
         if (fileType !== 'application/pdf') {
           errors.push(`${fileName}: 不支持的文件类型，仅支持PDF`);
-          // 删除非PDF文件
-          fs.unlinkSync(filePath);
           continue;
         }
         
+        // 从内存中获取文件数据
+        const fileBuffer = Buffer.concat(uploadedFile.filepath.chunks);
+        
         // 从PDF中提取文本
-        const resumeText = await extractTextFromPdf(filePath);
+        const data = await pdfParse(fileBuffer);
+        const resumeText = data.text;
         
         // 解析简历内容
         const parsedData = parseResumeContent(resumeText);
@@ -103,17 +111,9 @@ export default async function handler(req, res) {
           },
           airtableId: airtableRecord.id
         });
-        
-        // 删除临时文件
-        fs.unlinkSync(filePath);
       } catch (error) {
         console.error(`处理文件 ${uploadedFile.originalFilename} 时出错:`, error);
         errors.push(`${uploadedFile.originalFilename}: ${error.message}`);
-        
-        // 删除发生错误的文件
-        if (fs.existsSync(uploadedFile.filepath)) {
-          fs.unlinkSync(uploadedFile.filepath);
-        }
       }
     }
     
