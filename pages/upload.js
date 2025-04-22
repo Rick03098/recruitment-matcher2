@@ -1,243 +1,176 @@
-import { useState } from 'react';
-import { useRouter } from 'next/router';
-import PdfDropzone from '../components/PdfDropzone';
-import FilePreview from '../components/FilePreview';
+import formidable from 'formidable';
+import fs from 'fs';
+import path from 'path';
+import pdfParse from 'pdf-parse';
+import os from 'os';
 
-export default function UploadResume() {
-  const [name, setName] = useState('');
-  const [resumeText, setResumeText] = useState('');
-  const [uploadedFile, setUploadedFile] = useState(null);
-  const [parsedData, setParsedData] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  const router = useRouter();
+// 禁用默认的bodyParser，以便我们可以使用formidable解析form数据
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
-  // 处理PDF文件上传
-  const handleFileUpload = async (files) => {
-    if (files.length === 0) return;
-    
-    const file = files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const response = await fetch('/api/uploadPdf', {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || '文件上传失败');
-      }
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        setUploadedFile(data.file);
-        setParsedData(data.parsedData);
-        
-        // 如果解析出了技能，将其填入简历文本区域
-        if (data.parsedData.rawText) {
-          setResumeText(data.parsedData.rawText);
-        }
-      } else {
-        throw new Error(data.message || '文件处理失败');
-      }
-    } catch (err) {
-      console.error('PDF处理错误:', err);
-      setError(`文件处理失败: ${err.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 移除已上传的文件
-  const handleRemoveFile = () => {
-    setUploadedFile(null);
-    setParsedData(null);
-  };
-
-  // 提交表单
-const handleSubmit = async (e) => {
-  e.preventDefault();
+// 从PDF中提取技能
+function extractSkills(text) {
+  const commonSkills = [
+    'JavaScript', 'React', 'Vue', 'Angular', 'Node.js', 'TypeScript',
+    'Python', 'Java', 'C++', 'C#', 'PHP', 'Ruby', 'Go', 'Swift',
+    'HTML', 'CSS', 'SASS', 'Bootstrap', 'Tailwind',
+    'MongoDB', 'MySQL', 'PostgreSQL', 'SQL', 'NoSQL', 'Redis',
+    'AWS', 'Azure', 'Docker', 'Kubernetes', 'Git',
+    'Linux', 'Windows', 'MacOS', 'Android', 'iOS',
+    '前端', '后端', '全栈', '开发', '测试', 'UI', 'UX',
+    '数据分析', '机器学习', '人工智能', 'AI', '算法', '数据结构',
+    '市场营销', '用户增长', '内容运营', '社交媒体',
+    '金融建模', '投资分析', 'Excel', 'PPT', 'Wind',
+    'Figma', '产品原型', '信息架构', 'Tableau', 'R'
+  ];
   
-  // 验证输入
-  if (!resumeText.trim() && !uploadedFile) {
-    setError('请输入简历内容或上传简历文件');
-    return;
-  }
+  return commonSkills.filter(skill => 
+    text.toLowerCase().includes(skill.toLowerCase())
+  );
+}
 
-  if (!name) {
-    setError('请输入您的姓名');
-    return;
+// 提取职位名称
+function extractTitle(text) {
+  const commonTitles = [
+    '前端开发工程师', '后端开发工程师', '全栈开发工程师',
+    '软件工程师', '产品经理', 'UI设计师', 'UX设计师',
+    '数据分析师', '人工智能工程师', '机器学习工程师',
+    '测试工程师', '运维工程师', '项目经理',
+    '内容运营', '市场营销', '用户研究', '产品设计'
+  ];
+  
+  for (const title of commonTitles) {
+    if (text.includes(title)) {
+      return title;
+    }
   }
+  
+  return '开发工程师';
+}
 
-  setIsLoading(true);
-  setError(null);
-  setSuccess(null);
+// 提取经验年数
+function extractExperience(text) {
+  const expMatch = text.match(/(\d+)\s*年.*经验/);
+  if (expMatch) {
+    return `${expMatch[1]}年`;
+  }
+  return '未检测到';
+}
+
+// 提取教育信息
+function extractEducation(text) {
+  const eduLevels = ['博士', '硕士', '本科', '大专', '高中'];
+  
+  for (const level of eduLevels) {
+    if (text.includes(level)) {
+      return level;
+    }
+  }
+  
+  return '未检测到';
+}
+
+// 从PDF文件中提取内容
+async function extractTextFromPdf(filePath) {
+  try {
+    const dataBuffer = fs.readFileSync(filePath);
+    const data = await pdfParse(dataBuffer);
+    return data.text;
+  } catch (error) {
+    console.error('PDF解析错误:', error);
+    throw new Error('PDF解析失败');
+  }
+}
+
+// 解析简历内容
+function parseResumeContent(text) {
+  // 提取关键信息
+  const skills = extractSkills(text);
+  const title = extractTitle(text);
+  const experience = extractExperience(text);
+  const education = extractEducation(text);
+  
+  return {
+    skills,
+    title,
+    experience,
+    education,
+    // 包含部分原始文本用于预览
+    rawText: text.substring(0, 1000)
+  };
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, message: '只支持POST请求' });
+  }
 
   try {
-    let response;
+    // 使用系统临时目录，不需要创建
+    const tempDir = os.tmpdir();
+    console.log('使用的临时目录:', tempDir);
     
-    if (uploadedFile) {
-      // 如果有上传文件，使用已经解析的结果并保存到Airtable
-      const requestData = {
-        name,
-        title: parsedData?.title || '',
-        skills: parsedData?.skills || [],
-        experience: parsedData?.experience || '',
-        education: parsedData?.education || '',
-        contact: parsedData?.contact || '',
-        fileName: uploadedFile.name
-      };
-      
-      response = await fetch('/api/saveResumeToAirtable', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-    } else {
-      // 如果是手动输入的简历内容，解析并保存
-      const requestData = {
-        name,
-        resumeText,
-      };
-      
-      response = await fetch('/api/parseAndSaveResume', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-    }
-
-    // 处理响应
-    if (!response.ok) {
-      throw new Error('服务器响应错误: ' + response.status);
-    }
-
-    const result = await response.json();
+    // 配置formidable解析上传文件
+    const form = new formidable.IncomingForm({
+      uploadDir: tempDir,
+      keepExtensions: true,
+      maxFileSize: 10 * 1024 * 1024, // 10MB
+    });
     
-    if (result.success) {
-      setSuccess('简历已成功保存到简历库！');
-      
-      // 3秒后重定向到首页
-      setTimeout(() => {
-        router.push('/');
-      }, 3000);
-    } else {
-      throw new Error(result.message || '未知错误');
+    // 解析表单
+    const [fields, files] = await new Promise((resolve, reject) => {
+      form.parse(req, (err, fields, files) => {
+        if (err) reject(err);
+        else resolve([fields, files]);
+      });
+    });
+    
+    const uploadedFile = files.file;
+    if (!uploadedFile) {
+      return res.status(400).json({ success: false, message: '没有找到上传的文件' });
     }
-  } catch (err) {
-    console.error('简历处理失败:', err);
-    setError(`简历处理失败: ${err.message}`);
-  } finally {
-    setIsLoading(false);
+    
+    // 处理单个PDF文件
+    const filePath = uploadedFile.filepath;
+    const fileType = uploadedFile.mimetype;
+    
+    // 根据文件类型处理
+    let resumeText = '';
+    if (fileType === 'application/pdf') {
+      resumeText = await extractTextFromPdf(filePath);
+    } else if (fileType === 'text/plain') {
+      resumeText = fs.readFileSync(filePath, 'utf8');
+    } else {
+      // 对于其他文件类型，返回错误
+      fs.unlinkSync(filePath); // 删除临时文件
+      return res.status(400).json({ success: false, message: '不支持的文件类型，仅支持PDF和TXT文件' });
+    }
+    
+    // 解析简历内容
+    const parsedData = parseResumeContent(resumeText);
+    
+    // 删除临时文件
+    fs.unlinkSync(filePath);
+    
+    // 返回解析结果
+    return res.status(200).json({
+      success: true,
+      message: '文件上传并解析成功',
+      file: {
+        name: uploadedFile.originalFilename,
+        size: uploadedFile.size,
+        type: fileType
+      },
+      parsedData
+    });
+  } catch (error) {
+    console.error('处理上传文件错误:', error);
+    return res.status(500).json({
+      success: false,
+      message: '文件处理失败: ' + error.message
+    });
   }
-};
-  return (
-    <div className="p-4">
-      <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-6">
-          <h1 className="text-2xl font-bold mb-6">添加简历</h1>
-          
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-          
-          {success && (
-            <div className="mb-4 p-3 bg-green-100 text-green-700 rounded">
-              {success}
-            </div>
-          )}
-          
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <label className="block text-sm font-bold mb-2" htmlFor="name">
-                姓名
-              </label>
-              <input
-                id="name"
-                type="text"
-                className="w-full p-2 border rounded"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-            
-            <div className="grid grid-cols-1 gap-6 mb-6">
-              {/* PDF上传区域 */}
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-gray-50 p-3 border-b">
-                  <h3 className="font-medium">上传简历文件</h3>
-                </div>
-                <div className="p-4">
-                  {!uploadedFile ? (
-                    <PdfDropzone 
-                      onFileUpload={handleFileUpload}
-                      label="上传简历"
-                      helpText="支持PDF、DOCX和TXT格式，最大10MB"
-                    />
-                  ) : (
-                    <FilePreview 
-                      file={uploadedFile}
-                      parsedData={parsedData}
-                      onRemove={handleRemoveFile}
-                    />
-                  )}
-                </div>
-              </div>
-              
-              {/* 手动输入区域 */}
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-gray-50 p-3 border-b">
-                  <h3 className="font-medium">或手动输入简历内容</h3>
-                </div>
-                <div className="p-4">
-                  <textarea
-                    className="w-full p-2 border rounded h-40"
-                    value={resumeText}
-                    onChange={(e) => setResumeText(e.target.value)}
-                    placeholder="请粘贴您的简历文本内容，包括技能、经验、教育背景等信息..."
-                  />
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <button
-                type="submit"
-                className={`bg-blue-500 text-white font-bold py-2 px-4 rounded hover:bg-blue-600 disabled:bg-blue-300 ${
-                  isLoading ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-                disabled={isLoading}
-              >
-                {isLoading ? '处理中...' : '解析并保存'}
-              </button>
-              
-              <button
-                type="button"
-                className="text-gray-500 hover:text-gray-700"
-                onClick={() => router.push('/')}
-                disabled={isLoading}
-              >
-                返回首页
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
 }
