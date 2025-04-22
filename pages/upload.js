@@ -1,8 +1,7 @@
 import formidable from 'formidable';
 import fs from 'fs';
-import path from 'path';
-import pdfParse from 'pdf-parse';
 import os from 'os';
+import { parseResumeContent, extractTextFromPdf } from '../../utils/resumeParser';
 
 // 禁用默认的bodyParser，以便我们可以使用formidable解析form数据
 export const config = {
@@ -11,105 +10,13 @@ export const config = {
   },
 };
 
-// 从PDF中提取技能
-function extractSkills(text) {
-  const commonSkills = [
-    'JavaScript', 'React', 'Vue', 'Angular', 'Node.js', 'TypeScript',
-    'Python', 'Java', 'C++', 'C#', 'PHP', 'Ruby', 'Go', 'Swift',
-    'HTML', 'CSS', 'SASS', 'Bootstrap', 'Tailwind',
-    'MongoDB', 'MySQL', 'PostgreSQL', 'SQL', 'NoSQL', 'Redis',
-    'AWS', 'Azure', 'Docker', 'Kubernetes', 'Git',
-    'Linux', 'Windows', 'MacOS', 'Android', 'iOS',
-    '前端', '后端', '全栈', '开发', '测试', 'UI', 'UX',
-    '数据分析', '机器学习', '人工智能', 'AI', '算法', '数据结构',
-    '市场营销', '用户增长', '内容运营', '社交媒体',
-    '金融建模', '投资分析', 'Excel', 'PPT', 'Wind',
-    'Figma', '产品原型', '信息架构', 'Tableau', 'R'
-  ];
-  
-  return commonSkills.filter(skill => 
-    text.toLowerCase().includes(skill.toLowerCase())
-  );
-}
-
-// 提取职位名称
-function extractTitle(text) {
-  const commonTitles = [
-    '前端开发工程师', '后端开发工程师', '全栈开发工程师',
-    '软件工程师', '产品经理', 'UI设计师', 'UX设计师',
-    '数据分析师', '人工智能工程师', '机器学习工程师',
-    '测试工程师', '运维工程师', '项目经理',
-    '内容运营', '市场营销', '用户研究', '产品设计'
-  ];
-  
-  for (const title of commonTitles) {
-    if (text.includes(title)) {
-      return title;
-    }
-  }
-  
-  return '开发工程师';
-}
-
-// 提取经验年数
-function extractExperience(text) {
-  const expMatch = text.match(/(\d+)\s*年.*经验/);
-  if (expMatch) {
-    return `${expMatch[1]}年`;
-  }
-  return '未检测到';
-}
-
-// 提取教育信息
-function extractEducation(text) {
-  const eduLevels = ['博士', '硕士', '本科', '大专', '高中'];
-  
-  for (const level of eduLevels) {
-    if (text.includes(level)) {
-      return level;
-    }
-  }
-  
-  return '未检测到';
-}
-
-// 从PDF文件中提取内容
-async function extractTextFromPdf(filePath) {
-  try {
-    const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse(dataBuffer);
-    return data.text;
-  } catch (error) {
-    console.error('PDF解析错误:', error);
-    throw new Error('PDF解析失败');
-  }
-}
-
-// 解析简历内容
-function parseResumeContent(text) {
-  // 提取关键信息
-  const skills = extractSkills(text);
-  const title = extractTitle(text);
-  const experience = extractExperience(text);
-  const education = extractEducation(text);
-  
-  return {
-    skills,
-    title,
-    experience,
-    education,
-    // 包含部分原始文本用于预览
-    rawText: text.substring(0, 1000)
-  };
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, message: '只支持POST请求' });
   }
 
   try {
-    // 使用系统临时目录，不需要创建
+    // 使用系统临时目录
     const tempDir = os.tmpdir();
     console.log('使用的临时目录:', tempDir);
     
