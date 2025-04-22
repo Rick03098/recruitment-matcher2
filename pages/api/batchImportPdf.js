@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import pdfParse from 'pdf-parse';
 import Airtable from 'airtable';
+import os from 'os';
 
 // 禁用默认的bodyParser，以便使用formidable解析form数据
 export const config = {
@@ -17,11 +18,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 创建临时目录（如果不存在）
-    const tempDir = path.join(process.cwd(), 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+    // 使用系统临时目录
+    const tempDir = os.tmpdir();
+    console.log('使用的临时目录:', tempDir);
     
     // 配置formidable解析上传文件
     const form = new formidable.IncomingForm({
@@ -259,6 +258,12 @@ function extractTitle(text) {
 }
 
 function extractExperience(text) {
+  const expMatch = text.match(/(\d+)\s*年.*经验/);
+  if (expMatch) {
+    return `${expMatch[1]}年`;
+  }
+  return '未
+    function extractExperience(text) {
   const expMatch = text.match(/(\d+)\s*年.*经验/);
   if (expMatch) {
     return `${expMatch[1]}年`;
