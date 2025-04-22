@@ -1,9 +1,10 @@
 // pages/api/uploadAndSaveResume.js
 import { handleFileUploadInMemory, extractTextFromMemoryPdf, readTextFileFromMemory } from '../../utils/fileUploadHandler';
-import { parseResumeContent, extractNameFromFilename } from '../../utils/resumeParser';
-import { saveToAirtable } from '../../utils/airtableService';
+import { extractNameFromFilename } from '../../utils/resumeParser'; // 保留用于备用姓名提取
+import { parseResumeWithOpenAI } from '../../utils/openaiService'; // 引入 OpenAI 解析器
+import { saveToAirtable } from '../../utils/airtableService'; // 引入更新后的 Airtable 服务
 
-// 禁用默认的bodyParser，以便使用formidable解析form数据
+// 禁用 bodyParser 配置
 export const config = {
   api: {
     bodyParser: false,
@@ -12,67 +13,115 @@ export const config = {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, message: '只支持POST请求' });
+    return res.status(405).json({ success: false, message: '只支持 POST 请求' });
   }
 
   try {
-    // 使用内存处理文件上传
+    // 1. 处理文件上传 (内存模式)
     const { fields, files } = await handleFileUploadInMemory(req);
-    
-    const uploadedFile = files.file;
-    if (!uploadedFile) {
-      return res.status(400).json({ success: false, message: '没有找到上传的文件' });
+    const uploadedFile = files.file; // 假设前端发送的字段名为 'file'
+    if (!uploadedFile || !uploadedFile[0]) { // formidable v2+ wraps single file in array
+        console.error("没有找到名为 'file' 的上传文件。Files:", files);
+        return res.status(400).json({ success: false, message: "没有找到名为 'file' 的上传文件" });
     }
-    
-    // 处理简历文件
-    const fileType = uploadedFile.mimetype;
-    
-    // 根据文件类型处理
+    const theFile = uploadedFile[0]; // 获取文件对象
+
+    const fileType = theFile.mimetype;
+    const originalFilename = theFile.originalFilename || 'unknown_file';
+    const fileSize = theFile.size;
+
+    console.log(`收到文件: ${originalFilename}, 类型: ${fileType}, 大小: ${fileSize} bytes`);
+
+    // 2. 从文件中提取纯文本
     let resumeText = '';
     if (fileType === 'application/pdf') {
-      resumeText = await extractTextFromMemoryPdf(uploadedFile);
+      console.log("尝试解析 PDF 文件...");
+      resumeText = await extractTextFromMemoryPdf(theFile);
+      console.log(`PDF 解析完成，提取到 ${resumeText.length} 字符。`);
     } else if (fileType === 'text/plain') {
-      resumeText = readTextFileFromMemory(uploadedFile);
-    } else if (fileType === 'application/msword' || fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      // 对于Word文档，这里可以添加特定处理...
-      return res.status(400).json({ success: false, message: '暂时不支持Word文档解析' });
+      console.log("尝试读取 TXT 文件...");
+      resumeText = readTextFileFromMemory(theFile);
+      console.log(`TXT 读取完成，提取到 ${resumeText.length} 字符。`);
     } else {
-      // 对于其他文件类型，返回错误
-      return res.status(400).json({ success: false, message: '不支持的文件类型，仅支持PDF和TXT文件' });
+      console.warn(`不支持的文件类型: ${fileType}`);
+      return res.status(400).json({ success: false, message: `不支持的文件类型: ${fileType}，仅支持 PDF 和 TXT。` });
     }
-    
-    // 解析简历内容
-    const parsedData = parseResumeContent(resumeText);
-    
-    // 从文件名中提取可能的姓名信息
-    const fileName = uploadedFile.originalFilename;
-    const possibleName = extractNameFromFilename(fileName);
-    
-    // 如果简历中没有检测到姓名，但文件名可能含有姓名，使用文件名中的姓名
-    if (!parsedData.name || parsedData.name === '未检测到') {
-      parsedData.name = possibleName;
+
+    if (!resumeText || resumeText.trim().length < 50) { // 增加一个最小长度检查
+        console.warn("提取到的简历文本过短或为空，可能无法有效解析。");
+        // 可以选择不调用 OpenAI 或返回特定错误
+        // return res.status(400).json({ success: false, message: '提取到的简历文本过短或为空' });
     }
-    
-    // 保存到Airtable
-    const airtableRecord = await saveToAirtable(parsedData, fileName);
-    
-    // 返回解析结果
+
+
+    // 3. 使用 OpenAI 解析文本
+    let parsedData = {};
+    try {
+      parsedData = await parseResumeWithOpenAI(resumeText);
+      if (!parsedData) {
+           // 如果 OpenAI 返回 null (例如文本为空的情况)
+           console.error("OpenAI 解析器返回了 null，无法继续。");
+           return res.status(500).json({ success: false, message: 'OpenAI未能解析简历文本' });
+      }
+      console.log("OpenAI 解析成功，获取到结构化数据。");
+
+      // 4. (可选) 补充或验证信息
+      const possibleName = extractNameFromFilename(originalFilename);
+      if (!parsedData.name && possibleName) {
+        console.log(`OpenAI 未提取到姓名，使用文件名中的姓名: ${possibleName}`);
+        parsedData.name = possibleName;
+      } else if (!parsedData.name) {
+        parsedData.name = '姓名未检测';
+        console.warn("姓名信息缺失，已设为默认值。");
+      }
+      // 添加原始文本预览到要保存的数据中
+      parsedData.rawTextPreview = resumeText.substring(0, 500) + (resumeText.length > 500 ? '...' : '');
+
+
+    } catch (openaiError) {
+      console.error("调用 OpenAI 或处理其结果时出错:", openaiError);
+      return res.status(500).json({
+        success: false,
+        message: `OpenAI 处理简历时出错: ${openaiError.message}`
+      });
+    }
+
+    // 5. 保存到 Airtable
+    let airtableRecord = null;
+    try {
+        // 注意：saveToAirtable 需要接收符合其内部 recordData 结构的对象
+        // 我们直接传递 parsedData，并在 saveToAirtable 内部处理字段映射和格式化
+       airtableRecord = await saveToAirtable(parsedData, originalFilename);
+       console.log(`数据成功保存到 Airtable, 记录 ID: ${airtableRecord?.id}`);
+    } catch (airtableError) {
+       console.error("保存到 Airtable 时出错:", airtableError);
+       // 即使保存失败，也可能希望返回已解析的数据给前端
+       return res.status(500).json({
+         success: false,
+         message: `保存到 Airtable 失败: ${airtableError.message}`,
+         parsedData: parsedData // 仍然返回解析的数据
+       });
+    }
+
+    // 6. 返回成功响应
     return res.status(200).json({
       success: true,
-      message: '简历上传、解析和保存成功',
+      message: '简历已通过 OpenAI 解析并成功保存到 Airtable',
       file: {
-        name: uploadedFile.originalFilename,
-        size: uploadedFile.size,
+        name: originalFilename,
+        size: fileSize,
         type: fileType
       },
-      parsedData,
-      airtableRecord
+      parsedData: parsedData, // 返回从 OpenAI 获取的结构化数据
+      airtableRecord: airtableRecord // 返回 Airtable 记录信息 (包含 id 和字段)
     });
+
   } catch (error) {
-    console.error('处理上传文件错误:', error);
+    // 捕获顶层或文件处理/文本提取阶段的错误
+    console.error('处理上传文件的 handler 顶层错误:', error);
     return res.status(500).json({
       success: false,
-      message: '文件处理失败: ' + error.message
+      message: `文件处理失败: ${error.message}`
     });
   }
 }
