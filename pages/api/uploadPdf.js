@@ -1,6 +1,5 @@
-import formidable from 'formidable';
-import { Writable } from 'stream';
-import pdfParse from 'pdf-parse';
+// pages/api/uploadPdf.js
+import { handleFileUploadInMemory, extractTextFromMemoryPdf, readTextFileFromMemory } from '../../utils/fileUploadHandler';
 import { parseResumeContent } from '../../utils/resumeParser';
 
 // 禁用默认的bodyParser
@@ -16,50 +15,24 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 配置formidable使用内存存储
-    const form = new formidable.IncomingForm({
-      keepExtensions: true,
-      maxFileSize: 10 * 1024 * 1024, // 10MB
-      // 关键部分：使用内存存储而不是文件系统
-      fileWriteStreamHandler: () => {
-        const chunks = [];
-        const writable = new Writable({
-          write(chunk, encoding, callback) {
-            chunks.push(chunk);
-            callback();
-          }
-        });
-        writable.chunks = chunks;
-        return writable;
-      }
-    });
-    
-    // 解析表单
-    const [fields, files] = await new Promise((resolve, reject) => {
-      form.parse(req, (err, fields, files) => {
-        if (err) reject(err);
-        else resolve([fields, files]);
-      });
-    });
+    // 使用内存处理文件上传
+    const { fields, files } = await handleFileUploadInMemory(req);
     
     const uploadedFile = files.file;
     if (!uploadedFile) {
       return res.status(400).json({ success: false, message: '没有找到上传的文件' });
     }
     
-    // 从内存中获取文件数据，而不是从文件系统
-    const fileBuffer = Buffer.concat(uploadedFile.filepath.chunks);
-    const fileType = uploadedFile.mimetype;
-    
     // 根据文件类型处理
     let resumeText = '';
+    const fileType = uploadedFile.mimetype;
+    
     if (fileType === 'application/pdf') {
-      // 直接解析内存中的PDF数据
-      const data = await pdfParse(fileBuffer);
-      resumeText = data.text;
+      // 解析内存中的PDF数据
+      resumeText = await extractTextFromMemoryPdf(uploadedFile);
     } else if (fileType === 'text/plain') {
-      // 直接从内存缓冲区转换为文本
-      resumeText = fileBuffer.toString('utf8');
+      // 从内存读取文本文件
+      resumeText = readTextFileFromMemory(uploadedFile);
     } else {
       // 对于其他文件类型，返回错误
       return res.status(400).json({ success: false, message: '不支持的文件类型，仅支持PDF和TXT文件' });
