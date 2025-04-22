@@ -63,73 +63,86 @@ export default function UploadResume() {
   };
 
   // 提交表单
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  
+  // 验证输入
+  if (!resumeText.trim() && !uploadedFile) {
+    setError('请输入简历内容或上传简历文件');
+    return;
+  }
+
+  if (!name) {
+    setError('请输入您的姓名');
+    return;
+  }
+
+  setIsLoading(true);
+  setError(null);
+  setSuccess(null);
+
+  try {
+    let response;
     
-    // 验证输入
-    if (!resumeText.trim() && !uploadedFile) {
-      setError('请输入简历内容或上传简历文件');
-      return;
-    }
-
-    if (!name) {
-      setError('请输入您的姓名');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      // 构建请求数据
+    if (uploadedFile) {
+      // 如果有上传文件，使用已经解析的结果并保存到Airtable
       const requestData = {
         name,
-        resumeText,
-        fileSource: uploadedFile ? uploadedFile.name : null
+        title: parsedData?.title || '',
+        skills: parsedData?.skills || [],
+        experience: parsedData?.experience || '',
+        education: parsedData?.education || '',
+        contact: parsedData?.contact || '',
+        fileName: uploadedFile.name
       };
       
-      // 如果有解析的技能数据，也一起发送
-      if (parsedData && parsedData.skills) {
-        requestData.skills = parsedData.skills;
-        requestData.experience = parsedData.experience;
-        requestData.education = parsedData.education;
-      }
-      
-      // 发送请求
-      const response = await fetch('/api/addResume', {
+      response = await fetch('/api/saveResumeToAirtable', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestData),
       });
-
-      // 处理响应
-      if (!response.ok) {
-        throw new Error('服务器响应错误: ' + response.status);
-      }
-
-      const result = await response.json();
+    } else {
+      // 如果是手动输入的简历内容，解析并保存
+      const requestData = {
+        name,
+        resumeText,
+      };
       
-      if (result.success) {
-        setSuccess(result.message || '简历添加成功！');
-        
-        // 3秒后重定向到首页
-        setTimeout(() => {
-          router.push('/');
-        }, 3000);
-      } else {
-        throw new Error(result.message || '未知错误');
-      }
-    } catch (err) {
-      console.error('简历处理失败:', err);
-      setError(`简历处理失败: ${err.message}`);
-    } finally {
-      setIsLoading(false);
+      response = await fetch('/api/parseAndSaveResume', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
     }
-  };
 
+    // 处理响应
+    if (!response.ok) {
+      throw new Error('服务器响应错误: ' + response.status);
+    }
+
+    const result = await response.json();
+    
+    if (result.success) {
+      setSuccess('简历已成功保存到简历库！');
+      
+      // 3秒后重定向到首页
+      setTimeout(() => {
+        router.push('/');
+      }, 3000);
+    } else {
+      throw new Error(result.message || '未知错误');
+    }
+  } catch (err) {
+    console.error('简历处理失败:', err);
+    setError(`简历处理失败: ${err.message}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
   return (
     <div className="p-4">
       <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
