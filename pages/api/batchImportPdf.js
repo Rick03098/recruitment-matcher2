@@ -1,6 +1,5 @@
-import formidable from 'formidable';
-import { Writable } from 'stream';
-import pdfParse from 'pdf-parse';
+// pages/api/batchImportPdf.js
+import { handleFileUploadInMemory, extractTextFromMemoryPdf } from '../../utils/fileUploadHandler';
 import { parseResumeContent, extractNameFromFilename } from '../../utils/resumeParser';
 import { saveToAirtable } from '../../utils/airtableService';
 
@@ -17,31 +16,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 配置formidable使用内存存储
-    const form = new formidable.IncomingForm({
-      keepExtensions: true,
+    // 使用内存处理文件上传，允许多文件
+    const { fields, files } = await handleFileUploadInMemory(req, {
       maxFileSize: 20 * 1024 * 1024, // 20MB
-      multiples: true, // 允许多文件上传
-      // 关键部分：使用内存存储而不是文件系统
-      fileWriteStreamHandler: () => {
-        const chunks = [];
-        const writable = new Writable({
-          write(chunk, encoding, callback) {
-            chunks.push(chunk);
-            callback();
-          }
-        });
-        writable.chunks = chunks;
-        return writable;
-      }
-    });
-    
-    // 解析表单
-    const [fields, files] = await new Promise((resolve, reject) => {
-      form.parse(req, (err, fields, files) => {
-        if (err) reject(err);
-        else resolve([fields, files]);
-      });
+      allowMultiple: true
     });
     
     // 处理多个文件
@@ -72,12 +50,8 @@ export default async function handler(req, res) {
           continue;
         }
         
-        // 从内存中获取文件数据
-        const fileBuffer = Buffer.concat(uploadedFile.filepath.chunks);
-        
-        // 从PDF中提取文本
-        const data = await pdfParse(fileBuffer);
-        const resumeText = data.text;
+        // 从内存中解析PDF文件
+        const resumeText = await extractTextFromMemoryPdf(uploadedFile);
         
         // 解析简历内容
         const parsedData = parseResumeContent(resumeText);
